@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Rodrigo Viagens — Roteiros</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--verde:#0b6b3a;--bg:#f7faf7;--card:#ffffff}
+    *{box-sizing:border-box;font-family:'Poppins',sans-serif}
+    body{margin:0;background:var(--bg);color:#111}
+    header{background:var(--verde);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
+    .brand{font-weight:700;font-size:20px}
+    .hamb{
+      background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer
+    }
+    .container{display:grid;grid-template-columns:340px 1fr;gap:18px;padding:18px}
+    .editor{background:var(--card);padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.06);height:calc(100vh - 130px);overflow:auto}
+    .preview-wrap{padding:14px}
+    .preview{background:var(--card);padding:20px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.06);min-height:60vh}
+    .field{margin-bottom:10px}
+    label{display:block;font-size:13px;margin-bottom:6px}
+    input[type=text],select,textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #e2e8f0}
+    button{background:var(--verde);color:#fff;border:0;padding:10px 12px;border-radius:8px;cursor:pointer}
+    .day{border-left:4px solid var(--verde);padding:10px;margin-bottom:12px;border-radius:6px}
+    .day h3{margin:0 0 8px 0}
+    .activity{padding:8px;border-radius:8px;background:#f4f9f4;margin-bottom:8px}
+    footer{margin-top:16px;text-align:center;color:#444;font-size:14px}
+    .socials a{display:inline-block;margin:0 8px;text-decoration:none;color:var(--verde)}
+    /* responsive */
+    @media(max-width:900px){.container{grid-template-columns:1fr}
+      .editor{order:2;height:auto}
+      .preview-wrap{order:1}
+    }
+
+    /* --- hide on print: editor, header hamburger and other UI --- */
+    @media print{
+      header, .editor, .controls, .hamb{display:none !important}
+      body{background:white}
+      .container{grid-template-columns:1fr}
+      .preview{box-shadow:none;border-radius:0;padding:0}
+      footer{display:block}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">Rodrigo Viagens</div>
+    <div>
+      <button class="hamb" id="hamb">☰</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <aside class="editor" id="editor" style="display:none">
+      <h2>Modo de edição</h2>
+      <div class="field">
+        <label>Nome do roteiro</label>
+        <input id="itineraryName" type="text" placeholder="Nome do roteiro (ex: Foz do Iguaçu - 3 dias)" />
+      </div>
+      <div class="field">
+        <label>Nome do cliente</label>
+        <input id="clientName" type="text" placeholder="Nome do cliente" />
+      </div>
+      <div class="field">
+        <label>Adicionar dia (ex: Dia 1 — Gramado)</label>
+        <input id="dayTitle" type="text" placeholder="Nome do dia" />
+      </div>
+      <div class="field">
+        <button id="addDayBtn">Adicionar dia</button>
+      </div>
+      <hr />
+      <div id="daysList"></div>
+      <div style="height:20px"></div>
+      <div class="controls">
+        <label>Senha de saída</label>
+        <input id="logoutPass" type="text" placeholder="Digite qualquer coisa pra sair" />
+        <div style="height:8px"></div>
+        <button id="logoutBtn">Sair do modo edição</button>
+      </div>
+    </aside>
+
+    <main class="preview-wrap">
+      <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center">
+        <button id="loginBtn">Entrar (senha)</button>
+        <button id="printBtn">Gerar PDF</button>
+        <button id="savePdfBtn" class="requires-auth">Salvar Roteiro (PDF)</button>
+        <button id="viewOthersBtn" class="requires-auth">Ver outros roteiros</button>
+        <button id="shareBtn">Compartilhar</button>
+      </div>
+
+      <div class="preview" id="preview">
+        <div id="itineraryRoot">
+          <h1 id="itineraryTitle" style="color:var(--verde);margin-top:0">Roteiro</h1>
+          <div id="itineraryClient" style="font-size:14px;color:#555;margin-bottom:10px"></div>
+          <div id="daysContainer">
+            <!-- dias serão inseridos aqui -->
+            <div class="day" id="example_day">
+              <h3>Dia 1 — Exemplo: Chegada <button class='deleteExample' style='float:right;background:#e53e3e;border:none;color:#fff;padding:4px 8px;border-radius:6px;cursor:pointer'>Apagar exemplo</button></h3>
+              <div class="activity"><strong>Manhã:</strong> Chegada e check-in. <br/><small>08:00 • Hotel sugerido: Hotel Exemplo • <a href="#">Mapa</a></small></div>
+              <div class="activity"><strong>Tarde:</strong> Passeio no centro. <br/><small>14:00 • Guia local</small></div>
+            </div>
+          </div>
+        </div>
+        <footer>
+          <div>Contato: <a id="waLink" href="https://wa.me/5588996040635" target="_blank">(88) 9 9604-0635</a></div>
+          <div class="socials">Instagram: <a id="igLink" href="#" target="_blank">@rodrigo_viagensofc</a></div>
+        </footer>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // senha de edição (pode alterar)
+    const EDIT_PASS = '12344';
+    let loggedIn = false;
+
+    const hamb = document.getElementById('hamb');
+    const editor = document.getElementById('editor');
+    const loginBtn = document.getElementById('loginBtn');
+    const addDayBtn = document.getElementById('addDayBtn');
+    const dayTitle = document.getElementById('dayTitle');
+    const daysList = document.getElementById('daysList');
+    const daysContainer = document.getElementById('daysContainer');
+    const printBtn = document.getElementById('printBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const savePdfBtn = document.getElementById('savePdfBtn');
+    const viewOthersBtn = document.getElementById('viewOthersBtn');
+    const shareBtn = document.getElementById('shareBtn');
+
+    const itineraryNameInput = document.getElementById('itineraryName');
+    const clientNameInput = document.getElementById('clientName');
+
+    // update preview title/client in real-time when editing (so shared link shows updated values)
+    function refreshPreviewTitleClient(){
+      const titleEl = document.getElementById('itineraryTitle');
+      const clientEl = document.getElementById('itineraryClient');
+      if(titleEl) titleEl.textContent = (itineraryNameInput.value || 'Roteiro').trim();
+      if(clientEl) clientEl.textContent = (clientNameInput.value || '').trim();
+    }
+    if(itineraryNameInput){ itineraryNameInput.addEventListener('input', refreshPreviewTitleClient); }
+    if(clientNameInput){ clientNameInput.addEventListener('input', refreshPreviewTitleClient); }
+    // also call once on load in case inputs were pre-filled
+    refreshPreviewTitleClient();
+
+    // storage key
+    const STORAGE_KEY = 'rg_roteiros_v1';
+
+    // hide save/view buttons until login
+    if(savePdfBtn) savePdfBtn.style.display = 'none';
+    if(viewOthersBtn) viewOthersBtn.style.display = 'none';
+
+    // dynamically load pdf libs when needed
+    function loadPdfLibs(){
+      return new Promise((resolve, reject)=>{
+        if(window.html2canvas && window.jspdf) return resolve();
+        const s1 = document.createElement('script');
+        s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s1.onload = ()=>{
+          const s2 = document.createElement('script');
+          s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+          s2.onload = ()=>resolve();
+          s2.onerror = reject;
+          document.body.appendChild(s2);
+        };
+        s1.onerror = reject;
+        document.body.appendChild(s1);
+      });
+    }
+
+    // show/hide auth controls
+    function showAuthControls(show){
+      // buttons with class requires-auth
+      document.querySelectorAll('.requires-auth').forEach(el=>{
+        el.style.display = show ? 'inline-block' : 'none';
+      });
+      // delete buttons inside preview
+      document.querySelectorAll('.delActBtn, .delHotelBtn, .delFlightBtn, .deleteDayPreview, .deleteExample').forEach(b=>{
+        b.style.display = show ? 'inline-block' : 'none';
+      });
+    }
+
+    // login prompt
+    function loginPrompt(){
+      const pass = prompt('Senha de edição:');
+      if(pass === EDIT_PASS){
+        editor.style.display = 'block';
+        if(savePdfBtn) savePdfBtn.style.display = 'inline-block';
+        if(viewOthersBtn) viewOthersBtn.style.display = 'inline-block';
+        loggedIn = true;
+        showAuthControls(true);
+        // populate inputs with current title/client if present in preview
+        const titleEl = document.getElementById('itineraryTitle');
+        const clientEl = document.getElementById('itineraryClient');
+        if(titleEl) itineraryNameInput.value = titleEl.textContent.trim();
+        if(clientEl) clientNameInput.value = clientEl.textContent.trim();
+        window.scrollTo({top:0,behavior:'smooth'});
+      } else alert('Senha incorreta');
+    }
+
+    hamb.addEventListener('click', ()=>{ loginPrompt(); });
+    loginBtn.addEventListener('click', ()=>{ loginPrompt(); });
+
+    // utility to create delete button (hidden unless logged in)
+    function createDeleteBtn(text){
+      const b = document.createElement('button');
+      b.textContent = text;
+      b.className = 'requires-auth';
+      b.style.float='right';
+      b.style.background='#e53e3e';
+      b.style.border='none';
+      b.style.color='#fff';
+      b.style.padding='4px 8px';
+      b.style.borderRadius='6px';
+      b.style.cursor='pointer';
+      b.style.display = loggedIn ? 'inline-block' : 'none';
+      return b;
+    }
+
+    // attach handlers to an editor wrap + corresponding preview dayNode
+    function attachHandlersToWrap(wrap, dayNode){
+      const addActBtn = wrap.querySelector('.addActBtn');
+      const addHotelBtn = wrap.querySelector('.addHotelBtn');
+      const addFlightBtn = wrap.querySelector('.addFlightBtn');
+      const removeDayBtn = wrap.querySelector('.removeDayBtn');
+
+      // activity
+      addActBtn.addEventListener('click', ()=>{
+        const t = wrap.querySelector('.actTitle').value.trim();
+        const time = wrap.querySelector('.actTime').value.trim();
+        const map = wrap.querySelector('.actMap').value.trim();
+        const imgInput = wrap.querySelector('.actImage');
+        if(!t){alert('Preencha a atividade');return}
+
+        const act = document.createElement('div');
+        act.className = 'activity';
+        const del = createDeleteBtn('Apagar');
+        del.classList.add('delActBtn');
+        del.addEventListener('click', ()=>{ if(!loggedIn){alert('Senha necessária para apagar.');return;} act.remove(); });
+
+        if(imgInput && imgInput.files && imgInput.files[0]){
+          const file = imgInput.files[0];
+          const reader = new FileReader();
+          reader.onload = function(e){
+            act.innerHTML = `<strong>${time?escapeHtml(time)+': ':''}</strong><span class='actText'>${escapeHtml(t)}</span> ${map?`<br/><small><a href='${escapeAttr(map)}' target='_blank'>Mapa</a></small>`:''} <div style='margin-top:8px'><img src='${e.target.result}' style='max-width:100%;border-radius:6px'/></div>`;
+            act.appendChild(del);
+            dayNode.querySelector('.acts').appendChild(act);
+          };
+          reader.readAsDataURL(file);
+        } else {
+          act.innerHTML = `<strong>${time?escapeHtml(time)+': ':''}</strong><span class='actText'>${escapeHtml(t)}</span> ${map?`<br/><small><a href='${escapeAttr(map)}' target='_blank'>Mapa</a></small>`:''}`;
+          act.appendChild(del);
+          dayNode.querySelector('.acts').appendChild(act);
+        }
+        wrap.querySelector('.actTitle').value='';wrap.querySelector('.actTime').value='';wrap.querySelector('.actMap').value=''; if(imgInput) imgInput.value='';
+      });
+
+      // hotel
+      addHotelBtn.addEventListener('click', ()=>{ wrap.querySelector('.hotelForm').style.display='block'; });
+      wrap.querySelector('.cancelHotelBtn').addEventListener('click', ()=>{ wrap.querySelector('.hotelForm').style.display='none'; });
+      wrap.querySelector('.saveHotelBtn').addEventListener('click', ()=>{
+        const name = wrap.querySelector('.hotelName').value.trim();
+        const check = wrap.querySelector('.hotelCheck').value.trim();
+        const stars = wrap.querySelector('.hotelStars').value.trim();
+        const link = wrap.querySelector('.hotelLink').value.trim();
+        const imgInput = wrap.querySelector('.hotelImage');
+        if(!name){alert('Preencha o nome do hotel');return}
+        const h = document.createElement('div');
+        h.className = 'activity';
+        const del = createDeleteBtn('Apagar');
+        del.classList.add('delHotelBtn');
+        del.addEventListener('click', ()=>{ if(!loggedIn){alert('Senha necessária para apagar.');return;} h.remove(); });
+
+        if(imgInput && imgInput.files && imgInput.files[0]){
+          const file = imgInput.files[0];
+          const reader = new FileReader();
+          reader.onload = function(e){
+            h.innerHTML = `<strong>Hotel:</strong> <span class='hotelNameView'>${escapeHtml(name)}</span><br/><small>${escapeHtml(check)} ${stars?('• '+escapeHtml(stars)+'★'):''} ${link?`• <a href='${escapeAttr(link)}' target='_blank'>Reserva</a>`:''}</small><div style='margin-top:8px'><img src='${e.target.result}' style='max-width:100%;border-radius:6px'/></div>`;
+            h.appendChild(del);
+            dayNode.querySelector('.hotels').appendChild(h);
+          };
+          reader.readAsDataURL(file);
+        } else {
+          h.innerHTML = `<strong>Hotel:</strong> <span class='hotelNameView'>${escapeHtml(name)}</span><br/><small>${escapeHtml(check)} ${stars?('• '+escapeHtml(stars)+'★'):''} ${link?`• <a href='${escapeAttr(link)}' target='_blank'>Reserva</a>`:''}</small>`;
+          h.appendChild(del);
+          dayNode.querySelector('.hotels').appendChild(h);
+        }
+        wrap.querySelector('.hotelForm').style.display='none';
+        wrap.querySelector('.hotelName').value='';wrap.querySelector('.hotelCheck').value='';wrap.querySelector('.hotelStars').value='';wrap.querySelector('.hotelLink').value=''; if(imgInput) imgInput.value='';
+      });
+
+      // flight
+      addFlightBtn.addEventListener('click', ()=>{ wrap.querySelector('.flightForm').style.display='block'; });
+      wrap.querySelector('.cancelFlightBtn').addEventListener('click', ()=>{ wrap.querySelector('.flightForm').style.display='none'; });
+      wrap.querySelector('.saveFlightBtn').addEventListener('click', ()=>{
+        const airline = wrap.querySelector('.flightAirline').value.trim();
+        const number = wrap.querySelector('.flightNumber').value.trim();
+        const time = wrap.querySelector('.flightTime').value.trim();
+        const route = wrap.querySelector('.flightFromTo').value.trim();
+        if(!number){alert('Preencha o número do voo');return}
+        const f = document.createElement('div');
+        f.className = 'activity';
+        const del = createDeleteBtn('Apagar');
+        del.classList.add('delFlightBtn');
+        del.addEventListener('click', ()=>{ if(!loggedIn){alert('Senha necessária para apagar.');return;} f.remove(); });
+        f.innerHTML = `<strong>Voo:</strong> <span class='flightView'>${escapeHtml(airline?airline+' ':'')}${escapeHtml(number)}</span><br/><small>${escapeHtml(route)} ${time?('• '+escapeHtml(time)):''}</small>`;
+        f.appendChild(del);
+        dayNode.querySelector('.flights').appendChild(f);
+        wrap.querySelector('.flightForm').style.display='none';
+        wrap.querySelector('.flightAirline').value='';wrap.querySelector('.flightNumber').value='';wrap.querySelector('.flightTime').value='';wrap.querySelector('.flightFromTo').value='';
+      });
+
+      removeDayBtn.addEventListener('click', ()=>{ if(confirm('Remover esse dia?')){ if(!loggedIn){alert('Senha necessária para apagar.');return;} wrap.remove(); dayNode.remove(); } });
+      const delPreview = dayNode.querySelector('.deleteDayPreview');
+      if(delPreview){ delPreview.addEventListener('click', ()=>{ if(confirm('Apagar este dia?')){ if(!loggedIn){alert('Senha necessária para apagar.');return;} dayNode.remove(); if(wrap) wrap.remove(); } }); }
+    }
+
+    // create new day (used on add and on load)
+    function createDay(title){
+      const id = 'day_' + Date.now();
+      // editor card
+      const wrap = document.createElement('div');
+      wrap.style.borderTop = '1px solid #eee';
+      wrap.style.paddingTop = '8px';
+      wrap.innerHTML = `
+        <strong>${escapeHtml(title)}</strong>
+        <div style="margin-top:8px">
+          <input type='text' class='actTitle' placeholder='Atividade (ex: Passeio de manhã)' />
+          <input type='text' class='actTime' placeholder='Horario (ex: 08:00)' style='margin-top:6px'/>
+          <input type='text' class='actMap' placeholder='Link do Maps (opcional)' style='margin-top:6px'/>
+          <input type='file' class='actImage' accept='image/*' style='margin-top:6px'/>
+          <div style='margin-top:8px'>
+            <button class='addActBtn'>Adicionar atividade</button>
+            <button class='addHotelBtn' style='margin-left:6px;background:#2b7a50'>Adicionar hotel</button>
+            <button class='addFlightBtn' style='margin-left:6px;background:#1f6fb1'>Adicionar voo</button>
+            <button class='removeDayBtn' style='margin-left:8px;background:#ccc;color:#111'>Remover dia</button>
+          </div>
+          <!-- hotel form (hidden) -->
+          <div class='hotelForm' style='margin-top:8px;display:none'>
+            <input type='text' class='hotelName' placeholder='Nome do hotel' style='margin-top:6px'/>
+            <input type='text' class='hotelCheck' placeholder='Check-in/check-out (ex: 12/12 - 14/12)' style='margin-top:6px'/>
+            <input type='text' class='hotelStars' placeholder='Estrelas (ex: 4)' style='margin-top:6px'/>
+            <input type='text' class='hotelLink' placeholder='Link de reserva (opcional)' style='margin-top:6px'/>
+            <input type='file' class='hotelImage' accept='image/*' style='margin-top:6px'/>
+            <div style='margin-top:6px'><button class='saveHotelBtn'>Salvar hotel</button> <button class='cancelHotelBtn' style='margin-left:6px;background:#ccc;color:#000'>Cancelar</button></div>
+          </div>
+          <!-- flight form (hidden) -->
+          <div class='flightForm' style='margin-top:8px;display:none'>
+            <input type='text' class='flightAirline' placeholder='Companhia (ex: LATAM)' style='margin-top:6px'/>
+            <input type='text' class='flightNumber' placeholder='Número do voo (ex: JJ1234)' style='margin-top:6px'/>
+            <input type='text' class='flightTime' placeholder='Horario (ex: 08:00 - 10:00)' style='margin-top:6px'/>
+            <input type='text' class='flightFromTo' placeholder='Rota (ex: FOR → GRU)' style='margin-top:6px'/>
+            <div style='margin-top:6px'><button class='saveFlightBtn'>Salvar voo</button> <button class='cancelFlightBtn' style='margin-left:6px;background:#ccc;color:#000'>Cancelar</button></div>
+          </div>
+        </div>
+      `;
+      daysList.appendChild(wrap);
+
+      // preview
+      const dayNode = document.createElement('div');
+      dayNode.className = 'day';
+      dayNode.id = id;
+      const del = createDeleteBtn('Apagar dia'); del.classList.add('deleteDayPreview');
+      const h = document.createElement('h3');
+      h.innerHTML = escapeHtml(title);
+      h.appendChild(del);
+      dayNode.appendChild(h);
+      const acts = document.createElement('div'); acts.className='acts'; dayNode.appendChild(acts);
+      const hotels = document.createElement('div'); hotels.className='hotels'; hotels.style.marginTop='8px'; dayNode.appendChild(hotels);
+      const flights = document.createElement('div'); flights.className='flights'; flights.style.marginTop='8px'; dayNode.appendChild(flights);
+      daysContainer.appendChild(dayNode);
+
+      attachHandlersToWrap(wrap, dayNode);
+    }
+
+    addDayBtn.addEventListener('click', ()=>{
+      createDay(dayTitle.value.trim() || 'Dia novo');
+      dayTitle.value='';
+    });
+
+    // print
+    printBtn.addEventListener('click', ()=>{ window.print(); });
+
+    // Save itinerary to localStorage (not PDF)
+    function getSavedList(){
+      try{return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');}catch(e){return []}
+    }
+    function saveCurrentItinerary(){
+      if(!loggedIn){ alert('Somente acessível com senha. Faça login antes.'); return; }
+      const name = (itineraryNameInput.value || 'Sem título').trim();
+      const client = (clientNameInput.value || 'Cliente desconhecido').trim();
+      const previewHtml = daysContainer.innerHTML;
+      const editorHtml = daysList.innerHTML;
+      const created = new Date().toISOString();
+      const list = getSavedList();
+      const id = 'rit_' + Date.now();
+      list.push({id,name,client,previewHtml,editorHtml,created});
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      alert('Roteiro salvo no site. Para ver vá em "Ver outros roteiros" após fazer login.');
+    }
+
+    // attach save button (non-PDF)
+    // create a dedicated Save button in header area if not present
+    const headerActions = document.querySelector('div[style*="display:flex"]');
+    let saveBtn = document.getElementById('saveRoteiroBtn');
+    if(!saveBtn){
+      saveBtn = document.createElement('button');
+      saveBtn.id = 'saveRoteiroBtn';
+      saveBtn.textContent = 'Salvar Roteiro';
+      saveBtn.style.background = '#0b6b3a';
+      saveBtn.style.color = '#fff';
+      saveBtn.style.border = 'none';
+      saveBtn.style.padding = '8px 10px';
+      saveBtn.style.borderRadius = '8px';
+      saveBtn.style.cursor = 'pointer';
+      saveBtn.className = 'requires-auth';
+      saveBtn.style.display = 'none';
+      headerActions.appendChild(saveBtn);
+    }
+    saveBtn.addEventListener('click', saveCurrentItinerary);
+
+    // View saved itineraries
+    function renderSavedList(){
+      const list = getSavedList();
+      if(list.length===0){ alert('Nenhum roteiro salvo.'); return; }
+      // create a simple modal-like overlay
+      const overlay = document.createElement('div');
+      overlay.style.position='fixed';overlay.style.left=0;overlay.style.top=0;overlay.style.right=0;overlay.style.bottom=0;overlay.style.background='rgba(0,0,0,0.4)';overlay.style.zIndex=9999;overlay.style.padding='40px';overlay.style.overflow='auto';
+      const box = document.createElement('div');box.style.background='#fff';box.style.padding='20px';box.style.borderRadius='10px';box.style.maxWidth='900px';box.style.margin='0 auto';
+      const h = document.createElement('h3');h.textContent='Roteiros salvos';box.appendChild(h);
+      list.reverse().forEach(item=>{
+        const row = document.createElement('div');row.style.borderTop='1px solid #eee';row.style.padding='10px 0';
+        row.innerHTML = `<strong>${escapeHtml(item.name)}</strong> — <em>${escapeHtml(item.client)}</em><br/><small>Salvo em: ${new Date(item.created).toLocaleString()}</small>`;
+        const openBtn = document.createElement('button');openBtn.textContent='Abrir';openBtn.style.marginLeft='8px';openBtn.style.cursor='pointer';
+        openBtn.addEventListener('click', ()=>{
+          // load into preview and editor
+          daysContainer.innerHTML = item.previewHtml;
+          daysList.innerHTML = item.editorHtml;
+          // set title/client
+          itineraryNameInput.value = item.name; clientNameInput.value = item.client;
+          // reattach handlers to editor cards
+          const wraps = Array.from(daysList.children);
+          const dayNodes = Array.from(daysContainer.children);
+          wraps.forEach((w,i)=>{ attachHandlersToWrap(w, dayNodes[i] || null); });
+          alert('Roteiro carregado. Agora podes editar (se estiver logado) e depois salvar novamente para atualizar.');
+          document.body.removeChild(overlay);
+        });
+        const delBtn = document.createElement('button');delBtn.textContent='Apagar';delBtn.style.marginLeft='8px';delBtn.style.background='#e53e3e';delBtn.style.color='#fff';delBtn.style.cursor='pointer';
+        delBtn.addEventListener('click', ()=>{
+          if(!loggedIn){ alert('Somente com senha é possível apagar.'); return; }
+          if(confirm('Apagar esse roteiro permanentemente?')){
+            const newList = getSavedList().filter(x=>x.id!==item.id);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
+            alert('Roteiro apagado.');
+            document.body.removeChild(overlay);
+          }
+        });
+        row.appendChild(openBtn);row.appendChild(delBtn);
+        box.appendChild(row);
+      });
+      const close = document.createElement('button');close.textContent='Fechar';close.style.marginTop='12px';close.addEventListener('click', ()=>document.body.removeChild(overlay));box.appendChild(close);
+      overlay.appendChild(box);document.body.appendChild(overlay);
+    }
+
+    if(viewOthersBtn){ viewOthersBtn.addEventListener('click', ()=>{ if(!loggedIn){ alert('Somente acessível com senha. Faça login antes.'); return; } renderSavedList(); }); }
+
+    // delete example
+    const delExample = document.querySelector('.deleteExample');
+    if(delExample){ delExample.addEventListener('click', ()=>{ if(!loggedIn){ alert('Senha necessária para apagar.'); return; } if(confirm('Apagar o roteiro de exemplo?')){ const ex = document.getElementById('example_day'); if(ex) ex.remove(); } }); }
+
+    logoutBtn.addEventListener('click', ()=>{
+      editor.style.display = 'none';
+      if(savePdfBtn) savePdfBtn.style.display = 'none';
+      if(viewOthersBtn) viewOthersBtn.style.display = 'none';
+      document.querySelectorAll('.requires-auth').forEach(el=>el.style.display='none');
+      showAuthControls(false);
+      loggedIn = false;
+    });
+
+    // Save PDF functionality remains
+    if(savePdfBtn){
+      savePdfBtn.addEventListener('click', async ()=>{
+        if(!loggedIn){ alert('Somente acessível com senha. Faça login antes.'); return; }
+        try{
+          await loadPdfLibs();
+          const node = document.getElementById('itineraryRoot');
+          const canvas = await html2canvas(node, {scale:2, useCORS:true, logging:false});
+          const imgData = canvas.toDataURL('image/png');
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF('p','mm','a4');
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const imgProps = pdf.getImageProperties(imgData);
+          const pdfHeight = (imgProps.height * pageWidth) / imgProps.width;
+          pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pdfHeight);
+          pdf.save('roteiro.pdf');
+        }catch(e){ console.error(e); alert('Erro ao gerar PDF. Use "Gerar PDF" como alternativa.'); }
+      });
+    }
+
+    // --- SHARE (gera link com dados codificados na URL) ---
+    function base64EncodeUnicode(str) {
+      return btoa(unescape(encodeURIComponent(str)));
+    }
+    function base64DecodeUnicode(str) {
+      return decodeURIComponent(escape(atob(str)));
+    }
+
+    function generateShareLink(){
+      const name = (itineraryNameInput.value || document.getElementById('itineraryTitle').textContent || 'Sem título').trim();
+      const client = (clientNameInput.value || document.getElementById('itineraryClient').textContent || '').trim();
+      const previewHtml = daysContainer.innerHTML;
+      const payload = JSON.stringify({name,client,previewHtml});
+      const encoded = base64EncodeUnicode(payload);
+      const url = window.location.origin + window.location.pathname + '?share=' + encoded;
+      // copy to clipboard
+      if(navigator.clipboard){ navigator.clipboard.writeText(url).then(()=>{ alert('Link copiado para a área de transferência!'); }, ()=>{ prompt('Copie o link abaixo:', url); }); }
+      else { prompt('Copie o link abaixo:', url); }
+    }
+
+    if(shareBtn){ shareBtn.addEventListener('click', ()=>{ generateShareLink(); }); }
+
+    // On load: check for share param
+    (function(){
+      const params = new URLSearchParams(window.location.search);
+      if(params.has('share')){
+        try{
+          const data = params.get('share');
+          const json = base64DecodeUnicode(data);
+          const obj = JSON.parse(json);
+          // render preview-only
+          document.getElementById('itineraryTitle').textContent = obj.name || 'Roteiro';
+          document.getElementById('itineraryClient').textContent = obj.client || '';
+          document.getElementById('daysContainer').innerHTML = obj.previewHtml || '';
+          // hide editing UI
+          document.querySelector('header').style.display='none';
+          const ed = document.getElementById('editor'); if(ed) ed.remove();
+          document.querySelectorAll('.requires-auth').forEach(el=>el.remove());
+        }catch(e){ console.error('Erro ao ler link compartilhado', e); }
+      }
+    })();
+
+    // helpers
+    function escapeHtml(str){return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+    function escapeAttr(s){return String(s||'').replace(/"/g,'\"')}
+  </script>
+</body>
+</html>
+
+
+<!--
+INSTRUÇÕES RÁPIDAS (português) — copiar/colar
+1) Crie um repositório no GitHub (público ou privado). Nome sugerido: rodrigo-roteiros
+2) No repositório crie um arquivo chamado `index.html` e cole TODO este conteúdo.
+3) Commit -> Push.
+4) Para publicar no Vercel: acesse vercel.com > New Project > Import from GitHub > selecione o repositório. Vercel detecta que é um site estático e deploya.
+5) Para testar localmente: abra o arquivo index.html no navegador (duplo clique) ou use uma extensão "Live Server".
+
+OBS:
+- A senha de edição padrão está como `senha123`. Pode alterar na linha `const EDIT_PASS = 'senha123'`.
+- O botão "Gerar PDF" abre a caixa de impressão do navegador; a configuração de impressão gera PDF limpo (o editor e o hambúrguer são escondidos no modo impressão).
+- Se quiser que o PDF seja gerado automaticamente como arquivo (sem prompt de impressão), é fácil integrar uma biblioteca como html2pdf.js ou jsPDF — me fala se quiser isso que eu já incluo.
+-->
